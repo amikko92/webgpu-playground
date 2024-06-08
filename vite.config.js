@@ -10,6 +10,10 @@ export default defineConfig({
                     __dirname,
                     "src/basicTriangle/index.html"
                 ),
+                triangleVertexColor: resolve(
+                    __dirname,
+                    "src/triangleVertexColor/index.html"
+                ),
             },
         },
     },

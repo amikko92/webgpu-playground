@@ -1,10 +1,9 @@
 import { displayError } from "../utils/displayError";
 
 async function main() {
-    const adapter = await navigator.gpu?.requestAdapter();
+    const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter?.requestDevice();
 
-    // Display error message if WebGPU is not supported
     if (!device) {
         displayError("This page requires WebGPU");
         return;
@@ -13,9 +12,8 @@ async function main() {
     const canvas = document.querySelector("canvas");
     const context = canvas?.getContext("webgpu");
 
-    // Display error message if canvas is not supported
     if (!context) {
-        displayError("Canvas context for WegGPU not found");
+        displayError("Canvas not found");
         return;
     }
 
@@ -26,20 +24,34 @@ async function main() {
     });
 
     const shaderModule = device.createShaderModule({
-        label: "Hardcoded WebGPU triangle",
-        code: /* wgsl */ `
-            @vertex fn vert(@builtin(vertex_index) vertexIndex : u32) -> @builtin(position) vec4f {
+        label: "Triangle vertex shader",
+        code: /*wgsl*/ `
+            struct VertexOut {
+                @builtin(position) position: vec4f,
+                @location(0) color: vec4f,
+            }
+
+            @vertex fn vert(@builtin(vertex_index) vertexIndex: u32) -> VertexOut {
                 let positions = array(
                     vec2f(0.0, 0.5),    // Top
                     vec2f(-0.5, -0.5),  // Bottom left
                     vec2f(0.5, -0.5),   // Bottom right
                 );
+                let colors = array(
+                    vec4f(1.0, 0.0, 0.0, 1.0),
+                    vec4f(0.0, 1.0, 0.0, 1.0),
+                    vec4f(0.0, 0.0, 1.0, 1.0)               
+                );
 
-                return vec4f(positions[vertexIndex], 0.0, 1.0);
+                var out: VertexOut;
+                out.position = vec4f(positions[vertexIndex], 0.0, 1.0);
+                out.color = vec4f(colors[vertexIndex]);
+
+                return out;
             }
 
-            @fragment fn frag() -> @location(0) vec4f {
-                return vec4f(1.0, 0.0, 0.0, 1.0);
+            @fragment fn frag(input: VertexOut) -> @location(0) vec4f {
+                return input.color;
             }
         `,
     });
@@ -69,7 +81,7 @@ async function main() {
             colorAttachments: [
                 {
                     view: context.getCurrentTexture().createView(),
-                    clearValue: { r: 0.6, g: 0.8, b: 0.9, a: 1.0 },
+                    clearValue: { r: 0.1, g: 0.1, b: 0.2, a: 1.0 },
                     loadOp: "clear",
                     storeOp: "store",
                 },
@@ -86,7 +98,6 @@ async function main() {
         device.queue.submit([commandBuffer]);
     };
 
-    // Start render loop
     requestAnimationFrame(render);
 }
 
