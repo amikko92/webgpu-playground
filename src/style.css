@@ -2,6 +2,18 @@
     font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
+html,
+body {
+    margin: 0;
+    height: 100%;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
 h1 {
     font-size: 3.2em;
 }
