@@ -38,6 +38,7 @@ async function main() {
                 color: vec4f,
                 scale: vec2f,
                 offset: vec2f,
+                time: f32,
             }
 
             @group(0) @binding(0) var<uniform> myStruct: MyStruct;
@@ -49,8 +50,11 @@ async function main() {
                     vec2f(0.5, -0.5),   // Bottom right
                 );
 
+                // Make triangle scale up and down 
+                let scale = myStruct.scale * ((1 + sin(myStruct.time / 1500)) / 2);
+
                 return vec4f(
-                    positions[vertexIndex] * myStruct.scale + myStruct.offset,
+                    positions[vertexIndex] * scale + myStruct.offset,
                     0.0, 
                     1.0
                 );
@@ -76,15 +80,22 @@ async function main() {
         },
     });
 
+    // Resource on for memory alignment:
+    // https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
+    // Online tool that helps visualize memory layout:
+    // https://webgpufundamentals.org/webgpu/lessons/resources/wgsl-offset-computer.html#
     const uniformBufferSize =
         4 * 4 + // color: 4 32bit float (4 bytes each)
         2 * 4 + // scale: 2 32bit float (4 bytes each)
-        2 * 4; // offset: 4 32bit float (4 bytes each)
+        2 * 4 + // offset: 4 32bit float (4 bytes each)
+        1 * 4 + // time: 1 32bit float (4 bytes)
+        3 * 4; // Padding: 4 bytes due to alignment requirements
 
     // Offsets to uniform values
     const kColorOffset = 0; // 0 bytes in
     const kScaleOffset = 4; // 4 bytes in (0 + 4 color floats)
-    const kOffsetOffset = 6; // 6 bytes in (0 + 4 colors + 2 scale floats)
+    const kOffsetOffset = 6; // 6 bytes in (0 + 4 color floats + 2 scale floats)
+    const kTimeOffset = 8; // 8 bytes in (0 + 4 color floats + 2 scale floats + 2 offset floats)
 
     const kNumObjects = 100;
     const objectInfos: ObjectInfo[] = [];
@@ -111,6 +122,9 @@ async function main() {
         // Set a random offset
         uniformValues.set([rand(-1, 1), rand(-1, 1)], kOffsetOffset);
 
+        // Init time
+        uniformValues.set([0], kTimeOffset);
+
         const bindGroup = device.createBindGroup({
             label: `triangle bind group for obj: ${i}`,
             layout: pipeline.getBindGroupLayout(0),
@@ -125,7 +139,10 @@ async function main() {
         });
     }
 
-    const render = () => {
+    const render = (timeStamp: number) => {
+        requestAnimationFrame(render);
+        const time = timeStamp ?? 0;
+
         // Set scale to half and account for aspect ratio
         const aspect = canvas.width / canvas.height;
 
@@ -152,6 +169,9 @@ async function main() {
 
             // Set scale to half and account for aspect ratio
             uniformValues.set([scale / aspect, scale], kScaleOffset);
+
+            // Update time
+            uniformValues.set([time], kTimeOffset);
 
             // Copy uniform values from javascript to GPU
             device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
@@ -183,11 +203,11 @@ async function main() {
                     Math.min(height, device.limits.maxTextureDimension2D)
                 );
             }
-            render();
         }
     });
 
     resizeObserver.observe(canvas);
+    requestAnimationFrame(render);
 }
 
 main();
