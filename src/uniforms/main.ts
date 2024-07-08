@@ -89,7 +89,7 @@ async function main() {
         2 * 4 + // scale: 2 32bit float (4 bytes each)
         2 * 4 + // offset: 4 32bit float (4 bytes each)
         1 * 4 + // time: 1 32bit float (4 bytes)
-        3 * 4; // Padding: 4 bytes due to alignment requirements
+        3 * 4; //  Padding: 3 32bit "holes" (4 bytes each)
 
     // Offsets to uniform values
     const kColorOffset = 0; // 0 bytes in
