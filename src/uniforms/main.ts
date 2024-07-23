@@ -36,12 +36,16 @@ async function main() {
         code: /*wgsl*/ `
             struct MyStruct {
                 color: vec4f,
-                scale: vec2f,
                 offset: vec2f,
+            }
+
+            struct OtherStruct {
+                scale: vec2f,
                 time: f32,
             }
 
             @group(0) @binding(0) var<uniform> myStruct: MyStruct;
+            @group(0) @binding(1) var<uniform> otherStruct: OtherStruct;
 
             @vertex fn vert(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
                 let positions = array(
@@ -51,7 +55,7 @@ async function main() {
                 );
 
                 // Make triangle scale up and down 
-                let scale = myStruct.scale * ((1 + sin(myStruct.time / 1500)) / 2);
+                let scale = otherStruct.scale * ((1.2 + sin(otherStruct.time / 1500)) / 2);
 
                 return vec4f(
                     positions[vertexIndex] * scale + myStruct.offset,
@@ -84,43 +88,68 @@ async function main() {
     // https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
     // Online tool that helps visualize memory layout:
     // https://webgpufundamentals.org/webgpu/lessons/resources/wgsl-offset-computer.html#
-    const uniformBufferSize =
+    const staticUniformBufferSize =
         4 * 4 + // color: 4 32bit float (4 bytes each)
-        2 * 4 + // scale: 2 32bit float (4 bytes each)
         2 * 4 + // offset: 4 32bit float (4 bytes each)
+        2 * 4; //  Padding: 2 32bit "holes" (4 bytes each)
+
+    const uniformBufferSize =
+        2 * 4 + // scale: 2 32bit float (4 bytes each)
         1 * 4 + // time: 1 32bit float (4 bytes)
-        3 * 4; //  Padding: 3 32bit "holes" (4 bytes each)
+        1 * 4; //  Padding: 1 32bit "holes" (4 bytes each)
 
     // Offsets to uniform values
     const kColorOffset = 0; // 0 bytes in
-    const kScaleOffset = 4; // 4 bytes in (0 + 4 color floats)
-    const kOffsetOffset = 6; // 6 bytes in (0 + 4 color floats + 2 scale floats)
-    const kTimeOffset = 8; // 8 bytes in (0 + 4 color floats + 2 scale floats + 2 offset floats)
+    const kOffsetOffset = 4; // 4 bytes in (0 + 4 color floats)
+
+    const kScaleOffset = 0; // 0 bytes in
+    const kTimeOffset = 2; // 2 bytes in (0 + 2 offset floats)
 
     const kNumObjects = 100;
     const objectInfos: ObjectInfo[] = [];
 
     // Generate triangles
     for (let i = 0; i < kNumObjects; i++) {
-        const uniformBuffer = device.createBuffer({
-            label: "uniforms for triangle",
-            size: uniformBufferSize,
+        const staticUniformBuffer = device.createBuffer({
+            label: "static uniforms for triangles",
+            size: staticUniformBufferSize,
             usage:
                 GPUBufferUsage.UNIFORM | // Use with uniforms
                 GPUBufferUsage.COPY_DST, // Update by copying data to it
         });
 
+        // Only set static values once
+        {
+            // Typed array to hold uniform values
+            const staticUniformValues = new Float32Array(
+                staticUniformBufferSize / 4
+            ); // 4 bytes per float
+
+            // Set a random color
+            staticUniformValues.set(
+                [rand(0, 1), rand(0, 1), rand(0, 1), 1],
+                kColorOffset
+            );
+
+            // Set a random offset
+            staticUniformValues.set([rand(-1, 1), rand(-1, 1)], kOffsetOffset);
+
+            device.queue.writeBuffer(
+                staticUniformBuffer,
+                0,
+                staticUniformValues
+            );
+        }
+
         // Typed array to hold uniform values
         const uniformValues = new Float32Array(uniformBufferSize / 4); // 4 bytes per float
-
-        // Set a random color
-        uniformValues.set(
-            [rand(0, 1), rand(0, 1), rand(0, 1), 1],
-            kColorOffset
-        );
-
-        // Set a random offset
-        uniformValues.set([rand(-1, 1), rand(-1, 1)], kOffsetOffset);
+        const uniformBuffer = device.createBuffer({
+            label: "uniforms for triangles",
+            size: uniformBufferSize,
+            usage:
+                GPUBufferUsage.UNIFORM | // Use with uniforms
+                GPUBufferUsage.COPY_DST, // Update by copying data to it
+        });
 
         // Init time
         uniformValues.set([0], kTimeOffset);
@@ -128,7 +157,10 @@ async function main() {
         const bindGroup = device.createBindGroup({
             label: `triangle bind group for obj: ${i}`,
             layout: pipeline.getBindGroupLayout(0),
-            entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+            entries: [
+                { binding: 0, resource: { buffer: staticUniformBuffer } },
+                { binding: 1, resource: { buffer: uniformBuffer } },
+            ],
         });
 
         objectInfos.push({
