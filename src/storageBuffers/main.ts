@@ -38,6 +38,9 @@ async function main() {
 
             struct OtherStruct {
                 scale: vec2f,
+            }
+
+            struct SharedStruct {
                 time: f32,
             }
 
@@ -48,6 +51,7 @@ async function main() {
 
             @group(0) @binding(0) var<storage, read> myStructs: array<MyStruct>;
             @group(0) @binding(1) var<storage, read> otherStructs: array<OtherStruct>;
+            @group(0) @binding(2) var<uniform> sharedStruct: SharedStruct;
 
             @vertex fn vert(
                 @builtin(vertex_index) vertexIndex: u32, 
@@ -63,7 +67,7 @@ async function main() {
                 let myStruct = myStructs[instanceIndex];
 
                 // Make triangle scale up and down 
-                let scale = otherStruct.scale * ((1.2 + sin(otherStruct.time / 1500)) / 2);
+                let scale = otherStruct.scale * ((1.2 + sin(sharedStruct.time / 1500)) / 2);
 
                 var out: VertOut;
                 out.position = vec4f(
@@ -108,20 +112,20 @@ async function main() {
         2 * 4 + // offset: 4 32bit float (4 bytes each)
         2 * 4; //  Padding: 2 32bit "holes" (4 bytes each)
 
-    const changingUnitSize =
-        2 * 4 + // scale: 2 32bit float (4 bytes each)
-        1 * 4 + // time: 1 32bit float (4 bytes)
-        1 * 4; //  Padding: 1 32bit "holes" (4 bytes each)
+    const changingUnitSize = 2 * 4; // scale: 2 32bit float (4 bytes each)
 
     const staticStorageBufferSize = staticUnitSize * kNumObjects;
     const changingStorageBufferSize = changingUnitSize * kNumObjects;
+
+    const sharedUniformBufferSize = 1 * 4; // time: 1 32bit float (4 bytes)
 
     // Offsets to storage values
     const kColorOffset = 0; // 0 bytes in
     const kOffsetOffset = 4; // 4 bytes in (0 + 4 color floats)
 
     const kScaleOffset = 0; // 0 bytes in
-    const kTimeOffset = 2; // 2 bytes in (0 + 2 offset floats)
+
+    const kTimeOffset = 0; // 0 bytes in
 
     const staticStorageBuffer = device.createBuffer({
         label: "static storage for triangles",
@@ -136,6 +140,14 @@ async function main() {
         size: changingStorageBufferSize,
         usage:
             GPUBufferUsage.STORAGE | // Use with storage
+            GPUBufferUsage.COPY_DST, // Update by copying data to it
+    });
+
+    const sharedUniformBuffer = device.createBuffer({
+        label: "shared uniforms for triangles",
+        size: sharedUniformBufferSize,
+        usage:
+            GPUBufferUsage.UNIFORM | // Use with uniforms
             GPUBufferUsage.COPY_DST, // Update by copying data to it
     });
 
@@ -175,18 +187,26 @@ async function main() {
     // Typed array to hold changing storage values
     const storageValues = new Float32Array(changingStorageBufferSize / 4); // 4 bytes per float
 
+    // Typed array to hold shared uniform values
+    const sharedUniformValues = new Float32Array(sharedUniformBufferSize / 4); // 4 bytes per float
+
     const bindGroup = device.createBindGroup({
         label: `bind group for objects`,
         layout: pipeline.getBindGroupLayout(0),
         entries: [
             { binding: 0, resource: { buffer: staticStorageBuffer } },
             { binding: 1, resource: { buffer: changingStorageBuffer } },
+            { binding: 2, resource: { buffer: sharedUniformBuffer } },
         ],
     });
 
     const render = (timeStamp: number) => {
         requestAnimationFrame(render);
+
+        // Update time
         const time = timeStamp ?? 0;
+        sharedUniformValues.set([time], kTimeOffset);
+        device.queue.writeBuffer(sharedUniformBuffer, 0, sharedUniformValues);
 
         // Set scale to half and account for aspect ratio
         const aspect = canvas.width / canvas.height;
@@ -215,9 +235,6 @@ async function main() {
 
             // Set scale to half and account for aspect ratio
             storageValues.set([scale / aspect, scale], offset + kScaleOffset);
-
-            // Update time
-            storageValues.set([time], offset + kTimeOffset);
         }
 
         // Upload all scales at once
